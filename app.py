@@ -1,4 +1,3 @@
-
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
@@ -7,11 +6,13 @@ from langchain.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain.schema import SystemMessage, HumanMessage
 import os
 from typing import List
 
+# --- HELPER FUNCTIONS ---
+
 def get_pdf_text(pdf_docs: List[st.runtime.uploaded_file_manager.UploadedFile]) -> str:
+    """Extracts text from uploaded PDF files."""
     text = ""
     for pdf in pdf_docs:
         try:
@@ -23,6 +24,7 @@ def get_pdf_text(pdf_docs: List[st.runtime.uploaded_file_manager.UploadedFile]) 
     return text
 
 def get_text_chunks(text: str) -> List[str]:
+    """Splits long text into chunks."""
     text_splitter = CharacterTextSplitter(
         separator="\n",
         chunk_size=1000,
@@ -32,6 +34,7 @@ def get_text_chunks(text: str) -> List[str]:
     return text_splitter.split_text(text)
 
 def get_vectorstore(text_chunks: List[str]):
+    """Creates a FAISS vector store using Google embeddings."""
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     if not text_chunks:
         return None
@@ -42,20 +45,25 @@ def get_vectorstore(text_chunks: List[str]):
         return None
 
 def get_conversation_chain(vectorstore):
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0.7)
+    """Creates the conversational retrieval chain."""
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-1.5-flash-latest",
+        temperature=0.7,
+        convert_system_message_to_human=True
+    )
     memory = ConversationBufferMemory(
         memory_key='chat_history',
         return_messages=True,
         output_key='answer'
     )
-    # Set initial human message as workaround for deployed mode bug
-    memory.chat_memory.add_message(HumanMessage(content="Start the conversation."))
     return ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vectorstore.as_retriever(),
         memory=memory,
         return_source_documents=True
     )
+
+# --- MAIN APP ---
 
 def main():
     load_dotenv()
@@ -72,22 +80,31 @@ def main():
     if "processing_done" not in st.session_state:
         st.session_state.processing_done = False
 
+    # --- SIDEBAR FILE UPLOAD ---
     with st.sidebar:
         st.header("📄 Your Documents")
-        pdf_docs = st.file_uploader("Upload your PDFs here and click 'Process'", accept_multiple_files=True, type="pdf")
+        pdf_docs = st.file_uploader(
+            "Upload your PDFs here and click 'Process'",
+            accept_multiple_files=True,
+            type="pdf"
+        )
+
         if st.button("Process Documents"):
             if pdf_docs:
                 with st.status("Processing documents...", expanded=True) as status:
                     st.write("1. Extracting text from PDFs...")
                     raw_text = get_pdf_text(pdf_docs)
                     status.update(label="1. Text extracted.")
+
                     if raw_text:
                         st.write("2. Splitting text into chunks...")
                         text_chunks = get_text_chunks(raw_text)
                         status.update(label="2. Text chunked.")
+
                         st.write("3. Creating vector store...")
                         vectorstore = get_vectorstore(text_chunks)
                         status.update(label="3. Vector store created.")
+
                         if vectorstore:
                             st.write("4. Building conversation chain...")
                             st.session_state.conversation = get_conversation_chain(vectorstore)
@@ -101,6 +118,7 @@ def main():
             else:
                 st.warning("Please upload at least one PDF file.")
 
+    # --- MAIN CHAT INTERFACE ---
     st.title("🤖 Chat with Your PDFs")
     st.info("Upload your documents in the sidebar and click 'Process' to begin.")
 
@@ -112,22 +130,27 @@ def main():
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
+
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
+                response = {}
                 try:
                     response = st.session_state.conversation({'question': prompt})
                     answer = response.get('answer', "Sorry, I couldn't find an answer.")
                 except Exception as e:
                     st.error(f"⚠️ Internal Error: {e}")
                     answer = "Error during processing."
+
                 st.markdown(answer)
+
                 with st.expander("View Sources"):
                     if 'source_documents' in response and response['source_documents']:
                         for doc in response['source_documents']:
-                            st.write("**Source:** (Page context from document)")
+                            st.write("**Source:**")
                             st.info(f"{doc.page_content[:250]}...")
                     else:
-                        st.write("No source documents found for this answer.")
+                        st.write("No source documents found.")
+
         st.session_state.messages.append({"role": "assistant", "content": answer})
 
 if __name__ == '__main__':

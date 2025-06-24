@@ -7,6 +7,7 @@ from langchain.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain.schema import SystemMessage, HumanMessage
 import os
 from typing import List
 
@@ -47,6 +48,8 @@ def get_conversation_chain(vectorstore):
         return_messages=True,
         output_key='answer'
     )
+    # Set initial human message as workaround for deployed mode bug
+    memory.chat_memory.add_message(HumanMessage(content="Start the conversation."))
     return ConversationalRetrievalChain.from_llm(
         llm=llm,
         retriever=vectorstore.as_retriever(),
@@ -57,7 +60,7 @@ def get_conversation_chain(vectorstore):
 def main():
     load_dotenv()
     if not os.getenv("GOOGLE_API_KEY"):
-        st.error("🚨 Google API Key not found. Please set it in your .env file.")
+        st.error("🚨 Google API Key not found. Please set it in your .env file or Streamlit Secrets.")
         st.stop()
 
     st.set_page_config(page_title="Chat with Your PDFs", page_icon="📄", layout="wide")
@@ -89,7 +92,7 @@ def main():
                             st.write("4. Building conversation chain...")
                             st.session_state.conversation = get_conversation_chain(vectorstore)
                             st.session_state.processing_done = True
-                            st.session_state.messages = [{"role": "assistant", "content": "I'm ready! Ask me anything about your documents."}]
+                            st.session_state.messages = []
                             status.update(label="✅ Processing Complete!", state="complete", expanded=False)
                         else:
                             status.update(label="⚠️ Error in vector store creation.", state="error")
@@ -111,8 +114,12 @@ def main():
             st.markdown(prompt)
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                response = st.session_state.conversation({'question': prompt})
-                answer = response.get('answer', "Sorry, I couldn't find an answer.")
+                try:
+                    response = st.session_state.conversation({'question': prompt})
+                    answer = response.get('answer', "Sorry, I couldn't find an answer.")
+                except Exception as e:
+                    st.error(f"⚠️ Internal Error: {e}")
+                    answer = "Error during processing."
                 st.markdown(answer)
                 with st.expander("View Sources"):
                     if 'source_documents' in response and response['source_documents']:

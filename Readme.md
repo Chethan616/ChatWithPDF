@@ -2,7 +2,7 @@
 
 live web : https://chethan616-chatwithpdf-app-sd2s5u.streamlit.app
 
-https://github.com/Chethan616/ChatWithPDF/blob/main/Screenshot_2025-07-02-18-27-39-35_40deb401b9ffe8e1df2f1cc5ba480b12.jpg
+![App Screenshot](https://github.com/Chethan616/ChatWithPDF/raw/main/Screenshot_2025-07-02-18-27-39-35_40deb401b9ffe8e1df2f1cc5ba480b12.jpg)
 
 An AI-powered Streamlit web app that allows you to upload PDF documents and chat with them using natural language. It leverages **Google Gemini models** and **FAISS vector stores** to understand and answer questions based on your PDF content.
 
